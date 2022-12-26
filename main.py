@@ -10,13 +10,19 @@ import states
 from config import dp, bot, db
 from states import AllStates
 
-main_keyb = InlineKeyboardMarkup(
-    inline_keyboard=[
-        [InlineKeyboardButton(text="Рассылаемое сообщение", callback_data="sendto-groups")],
-        [InlineKeyboardButton(text="Добавить группу", callback_data="add_group")],
-        [InlineKeyboardButton(text="Указать интервал отправки сообщений", callback_data="set_send_interval")]
-    ]
-)
+
+def get_mkeyb():
+    is_stopped = bool(int(open("is_stopped.txt", 'r', encoding="utf-8").read()))
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Рассылаемое сообщение", callback_data="sendto-groups")],
+            [InlineKeyboardButton(text="Добавить группу", callback_data="add_group")],
+            [InlineKeyboardButton(text="Указать интервал отправки сообщений", callback_data="set_send_interval")],
+            [InlineKeyboardButton(text="Сменить аккаунт", callback_data="change_account")],
+            [InlineKeyboardButton(text="Остановить рассылку", callback_data="send-stop") if not is_stopped
+             else InlineKeyboardButton(text="Начать рассылку", callback_data="send-start")]
+        ]
+    )
 
 
 @dp.message_handler(commands=['start'])
@@ -25,7 +31,7 @@ async def index(msg: types.Message):
     if msg.chat.type != 'private':
         user_id = f"-100{msg.from_user.id}"
     db.add_user(user_id, msg.from_user.full_name) if not db.user_exists(msg.from_user.id) else None
-    await bot.send_message(msg.from_user.id, "Выберите, что хотите сделать", reply_markup=main_keyb)
+    await bot.send_message(msg.from_user.id, "Выберите, что хотите сделать", reply_markup=get_mkeyb())
 
 
 @dp.callback_query_handler(Text(startswith="sendto"))
@@ -50,6 +56,25 @@ async def add_group_link(call: types.CallbackQuery):
         ]
     ))
     await AllStates.add_group.set()
+
+
+@dp.callback_query_handler(Text(startswith="send"))
+async def process_send(call: types.CallbackQuery):
+    with open("is_stopped.txt", 'w') as f:
+        match call.data.split('-')[1]:
+            case "stop":
+                print("stop")
+                f.write("1")
+                with open("is_registered.txt", 'w', encoding="utf-8") as f2:
+                    f.write("0")
+            case "start":
+                print("start")
+                f.write("0")
+    await call.message.edit_text("Успешно", reply_markup=InlineKeyboardMarkup(
+                                   inline_keyboard=[
+                                       [InlineKeyboardButton(text="В главное меню", callback_data="to_main_menu")]
+                                   ]
+                               ))
 
 
 @dp.callback_query_handler(Text("set_send_interval"))
@@ -105,6 +130,8 @@ async def get_new_group_href(msg: types.Message, state: FSMContext):
 
 
 # , 'photo', 'document', 'video', 'voice', 'media', 'sticker', 'animation'
+
+
 @dp.message_handler(content_types=['text'],
                     state=AllStates.set_message)
 async def process_message(msg: types.Message, state: FSMContext):
@@ -139,7 +166,7 @@ async def stop_process(call: types.CallbackQuery, state: FSMContext):
 
 @dp.callback_query_handler(Text("to_main_menu"))
 async def to_main_menu(call: types.CallbackQuery):
-    await call.message.edit_text("Выберите, что хотите сделать", reply_markup=main_keyb)
+    await call.message.edit_text("Выберите, что хотите сделать", reply_markup=get_mkeyb())
 
 
 @dp.message_handler(content_types=['text', 'photo', 'document', 'video', 'voice', 'media', 'animation'])
